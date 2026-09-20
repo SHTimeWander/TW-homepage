@@ -1,0 +1,15 @@
+services:
+  homepage:
+    image: ${APP_IMAGE}
+    container_name: ${APP_NAME}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT}:3000"
+    env_file:
+      - .app.env
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: ${HOMEPAGE_ALLOWED_HOSTS}
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ./config:/app/config:Z

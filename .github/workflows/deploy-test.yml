@@ -1,4 +1,4 @@
-name: Deploy test server
+name: Build and deploy test
 
 on:
   push:
@@ -8,66 +8,71 @@ on:
 permissions:
   contents: read
 
-# Never interrupt a deployment while it is replacing the running container.
 concurrency:
   group: deploy-test
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build_image:
     if: github.repository == 'SHTimeWander/TW-homepage' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      NEXT_TELEMETRY_DISABLED: '1'
-      APP_NAME: ${{ vars.APP_NAME }}
-      APP_DEPLOY_PATH: ${{ vars.APP_DEPLOY_PATH }}
-      APP_PORT: ${{ vars.APP_PORT }}
-      HOMEPAGE_ALLOWED_HOSTS: ${{ vars.HOMEPAGE_ALLOWED_HOSTS }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Checkout
+      - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
         with:
-          persist-credentials: false
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Validate deployment scripts
-        run: |
-          bash -n scripts/deploy/ci-deploy.sh scripts/deploy/deploy-remote.sh
-          shellcheck scripts/deploy/ci-deploy.sh scripts/deploy/deploy-remote.sh
-          python3 scripts/deploy/test_deploy.py
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Build and push image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
-          version: 10
-          run_install: false
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ vars.APP_IMAGE }}:main
+            ${{ vars.APP_IMAGE }}:${{ github.sha }}
+          build-args: |
+            VERSION=main
+            REVISION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build application
-        env:
-          NEXT_PUBLIC_VERSION: main
-          NEXT_PUBLIC_REVISION: ${{ github.sha }}
-        run: NEXT_PUBLIC_BUILDTIME="$(date -u +%FT%TZ)" pnpm run build
-
-      - name: Build deployment image
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$APP_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
-          docker build --build-arg CI=true --tag "$APP_NAME:$GITHUB_SHA" .
-          docker save "$APP_NAME:$GITHUB_SHA" | gzip -6 > "$RUNNER_TEMP/homepage-image.tar.gz"
-          du -h "$RUNNER_TEMP/homepage-image.tar.gz"
+  deploy:
+    needs: build_image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out deployment files
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Deploy through SSH jump host
         env:
+          APP_IMAGE: ${{ vars.APP_IMAGE }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          APP_DEPLOY_PATH: ${{ vars.APP_DEPLOY_PATH }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          HOMEPAGE_ALLOWED_HOSTS: ${{ vars.HOMEPAGE_ALLOWED_HOSTS }}
+          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SSH_JUMP_HOST: ${{ vars.SSH_JUMP_HOST }}
           SSH_JUMP_PORT: ${{ vars.SSH_JUMP_PORT }}
           SSH_JUMP_USER: ${{ vars.SSH_JUMP_USER }}
@@ -77,5 +82,4 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
           SSH_JUMP_PASSWORD: ${{ secrets.SSH_JUMP_PASSWORD }}
           SSH_TEST_PASSWORD: ${{ secrets.SSH_TEST_PASSWORD }}
-          APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
-        run: bash scripts/deploy/ci-deploy.sh "$RUNNER_TEMP/homepage-image.tar.gz"
+        run: bash .github/scripts/deploy.sh

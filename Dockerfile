@@ -16,7 +16,7 @@ ENV CI=$CI
 
 # Install and build only outside CI
 RUN if [ "$CI" != "true" ]; then \
-      corepack enable && corepack prepare pnpm@latest --activate && \
+      corepack enable && corepack prepare pnpm@10 --activate && \
       pnpm install --frozen-lockfile --prefer-offline && \
       NEXT_TELEMETRY_DISABLED=1 \
       NEXT_PUBLIC_BUILDTIME=$BUILDTIME \
