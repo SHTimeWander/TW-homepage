@@ -17,7 +17,7 @@ jobs:
   deploy:
     if: github.repository == 'SHTimeWander/TW-homepage' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       NEXT_TELEMETRY_DISABLED: '1'
       APP_NAME: ${{ vars.APP_NAME }}
@@ -63,7 +63,8 @@ jobs:
           set -euo pipefail
           [[ "$APP_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
           docker build --build-arg CI=true --tag "$APP_NAME:$GITHUB_SHA" .
-          docker save "$APP_NAME:$GITHUB_SHA" | gzip -1 > "$RUNNER_TEMP/homepage-image.tar.gz"
+          docker save "$APP_NAME:$GITHUB_SHA" | gzip -6 > "$RUNNER_TEMP/homepage-image.tar.gz"
+          du -h "$RUNNER_TEMP/homepage-image.tar.gz"
 
       - name: Deploy through SSH jump host
         env:

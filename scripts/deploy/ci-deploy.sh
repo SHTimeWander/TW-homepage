@@ -92,7 +92,31 @@ printf '%s\n' "${APP_ENV_FILE:-}" > "$work_dir/app.env"
 # happens to contain an older HOMEPAGE_ALLOWED_HOSTS entry.
 printf 'HOMEPAGE_ALLOWED_HOSTS=%s\n' "$HOMEPAGE_ALLOWED_HOSTS" >> "$work_dir/app.env"
 
-scp -F "$work_dir/ssh_config" "$1" "test-server:$remote_dir/image.tar.gz"
+# Several SSH streams tolerate the high-latency runner-to-jump-host link much
+# better than a single large SCP. Retry individual chunks, then verify the
+# complete archive before allowing the remote script to replace any container.
+split -b 8M -d -a 4 "$1" "$work_dir/image.part-"
+sha256sum "$1" | awk '{ print $1 "  image.tar.gz" }' > "$work_dir/image.sha256"
+cat > "$work_dir/upload-part" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+part=$1
+for attempt in 1 2 3; do
+  if scp -F "$DEPLOY_SSH_CONFIG" "$part" "test-server:$DEPLOY_REMOTE_DIR/$(basename "$part")"; then
+    echo "Uploaded $(basename "$part")"
+    exit 0
+  fi
+  echo "Retrying $(basename "$part") (attempt $attempt)." >&2
+  sleep 5
+done
+exit 1
+EOF
+chmod 700 "$work_dir/upload-part"
+export DEPLOY_SSH_CONFIG="$work_dir/ssh_config" DEPLOY_REMOTE_DIR="$remote_dir"
+find "$work_dir" -name 'image.part-*' -print0 | xargs -0 -n 1 -P 8 "$work_dir/upload-part"
+scp -F "$work_dir/ssh_config" "$work_dir/image.sha256" "test-server:$remote_dir/"
+ssh -F "$work_dir/ssh_config" test-server \
+  "cd '$remote_dir' && cat image.part-* > image.tar.gz && sha256sum -c image.sha256 && rm -- image.part-*"
 scp -F "$work_dir/ssh_config" "$work_dir/deploy.env" "$work_dir/app.env" \
   "$script_dir/deploy-remote.sh" "test-server:$remote_dir/"
 ssh -F "$work_dir/ssh_config" test-server "bash '$remote_dir/deploy-remote.sh' '$remote_dir'"

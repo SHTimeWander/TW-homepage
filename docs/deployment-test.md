@@ -4,6 +4,8 @@
 
 工作流使用 Node.js 22、pnpm 10 和锁文件构建 Next.js standalone，再使用现有 Dockerfile 生成 `linux/amd64` 镜像。镜像通过 SSH ProxyJump 上传到测试服务器，由 Docker 启动；服务器不需要访问 GitHub 或镜像仓库，也不需要安装 Node.js。
 
+为适应 GitHub Runner 到跳板机的跨网传输，镜像按 8 MiB 分片，最多 8 路并行上传；单片失败最多尝试 3 次。合并后必须通过 SHA-256 校验才会部署，整个工作流超时为 60 分钟。
+
 ## GitHub Actions 配置
 
 服务器公共配置放在 **SHTimeWander Organization variables/secrets**，可见范围设为 `selected`，包含 `TW-homepage`。IP、用户名和主机公钥使用 variables，密码使用 secrets。
