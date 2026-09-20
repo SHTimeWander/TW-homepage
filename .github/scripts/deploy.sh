@@ -2,13 +2,16 @@
 set -euo pipefail
 umask 077
 
-for name in APP_IMAGE APP_NAME APP_DEPLOY_PATH APP_PORT HOMEPAGE_ALLOWED_HOSTS GITHUB_SHA GITHUB_ACTOR \
-  GHCR_TOKEN SSH_JUMP_HOST SSH_JUMP_PORT SSH_JUMP_USER SSH_TEST_HOST SSH_TEST_PORT SSH_TEST_USER \
+for name in APP_IMAGE APP_NAME APP_DEPLOY_PATH APP_PORT HOMEPAGE_ALLOWED_HOSTS GITHUB_SHA \
+  ALIYUN_REGISTRY ALIYUN_REGISTRY_USER ALIYUN_REGISTRY_PASSWORD \
+  SSH_JUMP_HOST SSH_JUMP_PORT SSH_JUMP_USER SSH_TEST_HOST SSH_TEST_PORT SSH_TEST_USER \
   SSH_KNOWN_HOSTS SSH_JUMP_PASSWORD SSH_TEST_PASSWORD; do
   [[ -n "${!name:-}" ]] || { echo "Missing deployment value: $name" >&2; exit 1; }
 done
 [[ "$APP_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
-[[ "$APP_IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+$ && "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+[[ "$ALIYUN_REGISTRY" =~ ^[a-z0-9.-]+$ && "$ALIYUN_REGISTRY_USER" =~ ^[a-zA-Z0-9_@.-]+$ ]]
+[[ "$APP_IMAGE" == "$ALIYUN_REGISTRY/"* && "$APP_IMAGE" =~ ^[a-z0-9._/-]+$ ]]
+[[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
 [[ "$APP_DEPLOY_PATH" =~ ^/[a-zA-Z0-9_/-]+$ && "$APP_DEPLOY_PATH" != / ]]
 [[ "$HOMEPAGE_ALLOWED_HOSTS" =~ ^[a-zA-Z0-9.,:*_-]+$ ]]
 for name in APP_PORT SSH_JUMP_PORT SSH_TEST_PORT; do
@@ -67,7 +70,7 @@ export DOCKER_CONFIG
 DOCKER_CONFIG=$(mktemp -d)
 trap 'rm -rf "$DOCKER_CONFIG"' EXIT
 
-docker login ghcr.io --username "$1" --password-stdin
+docker login "$1" --username "$2" --password-stdin
 docker compose --env-file .deploy.env pull
 docker compose --env-file .deploy.env up -d --remove-orphans --wait --wait-timeout 120
 docker compose --env-file .deploy.env ps
@@ -76,5 +79,5 @@ EOF_REMOTE
 ssh -F "$work_dir/ssh_config" test-server "install -d -m 0750 '$APP_DEPLOY_PATH' '$APP_DEPLOY_PATH/config'"
 scp -F "$work_dir/ssh_config" .github/compose.yaml "$work_dir/.deploy.env" \
   "$work_dir/.app.env" "$work_dir/.deploy.sh" "test-server:$APP_DEPLOY_PATH/"
-printf '%s' "$GHCR_TOKEN" | ssh -F "$work_dir/ssh_config" test-server \
-  "bash '$APP_DEPLOY_PATH/.deploy.sh' '$GITHUB_ACTOR'"
+printf '%s' "$ALIYUN_REGISTRY_PASSWORD" | ssh -F "$work_dir/ssh_config" test-server \
+  "bash '$APP_DEPLOY_PATH/.deploy.sh' '$ALIYUN_REGISTRY' '$ALIYUN_REGISTRY_USER'"

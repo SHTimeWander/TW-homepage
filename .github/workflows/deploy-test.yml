@@ -17,9 +17,6 @@ jobs:
     if: github.repository == 'SHTimeWander/TW-homepage' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,12 +24,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
-      - name: Log in to GHCR
+      - name: Log in to Aliyun ACR
         uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.ALIYUN_REGISTRY }}
+          username: ${{ vars.ALIYUN_REGISTRY_USER }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
       - name: Build and push image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -41,8 +38,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ vars.APP_IMAGE }}:main
-            ${{ vars.APP_IMAGE }}:${{ github.sha }}
+            ${{ vars.ALIYUN_REGISTRY }}/${{ vars.ALIYUN_NAME_SPACE }}/${{ vars.APP_IMAGE }}:main
+            ${{ vars.ALIYUN_REGISTRY }}/${{ vars.ALIYUN_NAME_SPACE }}/${{ vars.APP_IMAGE }}:${{ github.sha }}
           build-args: |
             VERSION=main
             REVISION=${{ github.sha }}
@@ -57,22 +54,21 @@ jobs:
     needs: build_image
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: read
     steps:
       - name: Check out deployment files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Deploy through SSH jump host
         env:
-          APP_IMAGE: ${{ vars.APP_IMAGE }}
+          APP_IMAGE: ${{ vars.ALIYUN_REGISTRY }}/${{ vars.ALIYUN_NAME_SPACE }}/${{ vars.APP_IMAGE }}
           APP_NAME: ${{ vars.APP_NAME }}
           APP_DEPLOY_PATH: ${{ vars.APP_DEPLOY_PATH }}
           APP_PORT: ${{ vars.APP_PORT }}
           HOMEPAGE_ALLOWED_HOSTS: ${{ vars.HOMEPAGE_ALLOWED_HOSTS }}
           APP_ENV_FILE: ${{ secrets.APP_ENV_FILE }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALIYUN_REGISTRY: ${{ vars.ALIYUN_REGISTRY }}
+          ALIYUN_REGISTRY_USER: ${{ vars.ALIYUN_REGISTRY_USER }}
+          ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
           SSH_JUMP_HOST: ${{ vars.SSH_JUMP_HOST }}
           SSH_JUMP_PORT: ${{ vars.SSH_JUMP_PORT }}
           SSH_JUMP_USER: ${{ vars.SSH_JUMP_USER }}
